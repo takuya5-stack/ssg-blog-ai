@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>SSG ブログネタ生成AI</title>
+<style>
+:root{
+  --bg:#f5f4f0; --card:#fff; --ink:#23201c; --sub:#6f675e;
+  --line:#e2ded6; --accent:#c2662f; --accent-d:#a5501f;
+  --green:#2f7d5c; --shadow:0 1px 3px rgba(35,32,28,.07),0 6px 20px rgba(35,32,28,.05);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+  font-size:16px; line-height:1.7; padding-bottom:60px;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+header{
+  background:var(--card);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20;
+  padding:calc(env(safe-area-inset-top) + 12px) 0 12px;
+}
+header .wrap{display:flex;align-items:center;gap:10px}
+h1{font-size:17px;margin:0;flex:1;font-weight:700;letter-spacing:.02em}
+h1 small{display:block;font-size:11px;color:var(--sub);font-weight:400;letter-spacing:.06em}
+.iconbtn{
+  background:none;border:1px solid var(--line);border-radius:10px;
+  width:40px;height:40px;font-size:18px;cursor:pointer;color:var(--sub);
+}
+.iconbtn:active{background:var(--bg)}
+section{margin:20px 0}
+.label{font-size:12px;color:var(--sub);font-weight:700;letter-spacing:.08em;margin-bottom:8px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{
+  padding:14px 10px;border:1.5px solid var(--line);background:var(--card);
+  border-radius:12px;cursor:pointer;font-size:14px;font-weight:600;color:var(--sub);
+  font-family:inherit;line-height:1.4;transition:.12s;
+}
+.seg button small{display:block;font-size:11px;font-weight:400;margin-top:3px;opacity:.8}
+.seg button[aria-pressed="true"]{
+  border-color:var(--accent);background:#fdf6f1;color:var(--accent-d);
+}
+.go{
+  width:100%;padding:17px;border:none;border-radius:14px;background:var(--accent);
+  color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;
+  box-shadow:var(--shadow);
+}
+.go:active{background:var(--accent-d)}
+.go:disabled{opacity:.5;cursor:default}
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
+}
+.card h3{margin:0 0 6px;font-size:16px;line-height:1.5}
+.card .why{font-size:13px;color:var(--sub);margin:0 0 12px}
+.card .tag{
+  display:inline-block;font-size:11px;background:#f0ece5;color:var(--sub);
+  padding:2px 8px;border-radius:99px;margin:0 6px 8px 0;
+}
+.rowbtn{display:flex;gap:8px;flex-wrap:wrap}
+.rowbtn button{
+  flex:1;min-width:120px;padding:11px 8px;border-radius:10px;border:1.5px solid var(--line);
+  background:var(--card);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--ink);
+}
+.rowbtn button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.rowbtn button:active{opacity:.75}
+.status{
+  text-align:center;color:var(--sub);font-size:14px;padding:26px 10px;
+}
+.status .dot{
+  display:inline-block;width:8px;height:8px;border-radius:99px;background:var(--accent);
+  margin-right:7px;animation:p 1s infinite;
+}
+@keyframes p{50%{opacity:.25}}
+.err{background:#fdecec;border:1px solid #f3c9c9;color:#a12a2a;padding:12px 14px;border-radius:12px;font-size:14px}
+.out{white-space:pre-wrap;font-size:15px;line-height:1.9;word-break:break-word}
+dialog{
+  border:none;border-radius:16px;padding:0;max-width:640px;width:calc(100% - 24px);
+  box-shadow:0 20px 60px rgba(0,0,0,.25);color:var(--ink);background:var(--card);
+}
+dialog::backdrop{background:rgba(35,32,28,.45)}
+.dlg-hd{padding:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.dlg-hd strong{flex:1;font-size:15px}
+.dlg-bd{padding:16px 16px 26px;max-height:72vh;overflow:auto;-webkit-overflow-scrolling:touch}
+label.f{display:block;margin-bottom:14px;font-size:13px;font-weight:600;color:var(--sub)}
+label.f input{
+  width:100%;margin-top:5px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+  font-size:15px;font-family:inherit;background:#fbfaf8;color:var(--ink);
+}
+label.f .hint{display:block;font-weight:400;font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6}
+.hist{font-size:14px}
+.hist button{
+  display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);
+  padding:12px 4px;font-family:inherit;font-size:14px;cursor:pointer;color:var(--ink);line-height:1.5;
+}
+.hist button span{display:block;font-size:11px;color:var(--sub);margin-top:2px}
+.note{font-size:12px;color:var(--sub);line-height:1.7}
+.ok{color:var(--green);font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>ブログネタ生成AI<small>個別指導塾SSG</small></h1>
+    <button class="iconbtn" id="btnHist" title="履歴">🕘</button>
+    <button class="iconbtn" id="btnCfg" title="設定">⚙</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="label">記事のタイプ</div>
+    <div class="seg" id="segType">
+      <button data-v="column" aria-pressed="true">日常コラム型<small>塾の日常＋季節ネタ</small></button>
+      <button data-v="seo" aria-pressed="false">教育情報・SEO型<small>入試情報で検索流入</small></button>
+    </div>
+  </section>
+
+  <section>
+    <button class="go" id="btnIdeas">ネタを5つ出す</button>
+    <p class="note" style="margin:10px 2px 0">
+      最新の教育情報をAIが検索し、過去記事と重複しないネタを出します。<br>
+      出てきた案ごとに「構成だけ」か「下書き全文」を選べます。
+    </p>
+  </section>
+
+  <section id="area"></section>
+
+</div>
+
+<!-- 設定 -->
+<dialog id="dlgCfg">
+  <div class="dlg-hd"><strong>設定（この端末にのみ保存）</strong><button class="iconbtn" data-close>✕</button></div>
+  <div class="dlg-bd">
+    <label class="f">Claude APIキー
+      <input type="password" id="cfgKey" placeholder="sk-ant-...">
+      <span class="hint">console.anthropic.com で発行。ファイルには保存されず、この端末のブラウザにだけ残ります。</span>
+    </label>
+    <label class="f">ブログのURL
+      <input type="url" id="cfgWp" placeholder="https://www.ssg-juku-shingashi.com">
+      <span class="hint">過去記事の読み込み（重複チェック・文体参考）に使います。</span>
+    </label>
+    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+    <p class="note" style="margin-top:0"><b>WordPressに下書きを直接送る場合のみ入力</b>（空でもコピー機能は使えます）</p>
+    <label class="f">WordPressユーザー名
+      <input type="text" id="cfgUser" autocomplete="off" placeholder="ログインID">
+    </label>
+    <label class="f">アプリケーションパスワード
+      <input type="password" id="cfgPass" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx">
+      <span class="hint">WordPress管理画面 → ユーザー → プロフィール → 「アプリケーションパスワード」で発行。ログインパスワードとは別物です。スペースはそのままでOK。</span>
+    </label>
+    <button class="go" id="btnSave">保存する</button>
+  </div>
+</dialog>
+
+<!-- 履歴 -->
+<dialog id="dlgHist">
+  <div class="dlg-hd"><strong>生成履歴</strong><button class="iconbtn" data-close>✕</button></div>
+  <div class="dlg-bd hist" id="histBody"></div>
+</dialog>
+
+<!-- 結果 -->
+<dialog id="dlgOut">
+  <div class="dlg-hd"><strong id="outTitle">結果</strong><button class="iconbtn" data-close>✕</button></div>
+  <div class="dlg-bd">
+    <div class="rowbtn" style="margin-bottom:14px">
+      <button id="btnCopy">📋 全文コピー</button>
+      <button id="btnWp" class="primary">📤 WordPressに下書き送信</button>
+    </div>
+    <div id="wpMsg" class="note" style="margin-bottom:12px"></div>
+    <div class="out" id="outBody"></div>
+  </div>
+</dialog>
+
+<script>
+/* ===================== 設定 ===================== */
+const MODEL = "claude-opus-5";           // 品質重視。コストを下げるなら "claude-sonnet-5"
+const API   = "https://api.anthropic.com/v1/messages";
+const LS    = "ssgBlogAI";
+
+const JUKU = `個別指導塾SSG（エスエスジー）
+・所在地：埼玉県川越市、東武東上線 新河岸駅の近く
+・対象：小学生・中学生
+・強み：定期テスト対策による内申点アップ、埼玉県公立高校入試対策、一人ひとりに手厚い個別指導、アットホームな雰囲気
+・書き手：塾長（大橋場拓也）本人が一人称で書く`;
+
+const store = {
+  get(){ try{ return JSON.parse(localStorage.getItem(LS)) || {}; }catch(e){ return {}; } },
+  set(o){ localStorage.setItem(LS, JSON.stringify({ ...store.get(), ...o })); }
+};
+
+/* ===================== 状態 ===================== */
+let articleType = "column";
+let pastPosts   = null;   // {titles:[], samples:[]}
+let lastResult  = null;   // {title, body}
+
+const $ = s => document.querySelector(s);
+const area = $("#area");
+
+/* ===================== 起動 ===================== */
+(function init(){
+  const c = store.get();
+  if(!c.wp) store.set({ wp: "https://www.ssg-juku-shingashi.com" });
+  if(!c.key) setTimeout(()=>{ openCfg(); }, 400);
+
+  document.querySelectorAll("dialog [data-close]").forEach(b=>{
+    b.onclick = () => b.closest("dialog").close();
+  });
+  $("#segType").onclick = e => {
+    const b = e.target.closest("button"); if(!b) return;
+    articleType = b.dataset.v;
+    [...$("#segType").children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  };
+  $("#btnCfg").onclick  = openCfg;
+  $("#btnHist").onclick = openHist;
+  $("#btnSave").onclick = saveCfg;
+  $("#btnIdeas").onclick = runIdeas;
+  $("#btnCopy").onclick = copyOut;
+  $("#btnWp").onclick   = sendWp;
+})();
+
+function openCfg(){
+  const c = store.get();
+  $("#cfgKey").value = c.key || "";
+  $("#cfgWp").value  = c.wp  || "";
+  $("#cfgUser").value= c.user|| "";
+  $("#cfgPass").value= c.pass|| "";
+  $("#dlgCfg").showModal();
+}
+function saveCfg(){
+  store.set({
+    key : $("#cfgKey").value.trim(),
+    wp  : $("#cfgWp").value.trim().replace(/\/+$/,""),
+    user: $("#cfgUser").value.trim(),
+    pass: $("#cfgPass").value.trim()
+  });
+  pastPosts = null;
+  $("#dlgCfg").close();
+}
+
+/* ===================== 過去記事の読み込み ===================== */
+async function loadPast(){
+  if(pastPosts) return pastPosts;
+  const wp = store.get().wp;
+  if(!wp){ pastPosts = { titles: [], samples: [] }; return pastPosts; }
+  try{
+    const r = await fetch(`${wp}/wp-json/wp/v2/posts?per_page=30&_fields=title,content,date`);
+    if(!r.ok) throw new Error(r.status);
+    const posts = await r.json();
+    const strip = h => (h||"").replace(/<[^>]+>/g," ").replace(/&[a-z]+;/gi," ").replace(/\s+/g," ").trim();
+    pastPosts = {
+      titles : posts.map(p => `${(p.date||"").slice(0,10)}　${strip(p.title.rendered)}`),
+      samples: posts.slice(0,4).map(p => `【${strip(p.title.rendered)}】\n${strip(p.content.rendered).slice(0,700)}`)
+    };
+  }catch(e){
+    pastPosts = { titles: [], samples: [], error: String(e) };
+  }
+  return pastPosts;
+}
+
+/* ===================== Claude API ===================== */
+async function callClaude({ system, user, maxTokens = 8000, effort = "medium", search = true }){
+  const key = store.get().key;
+  if(!key) { openCfg(); throw new Error("APIキーが未設定です。設定から入力してください。"); }
+
+  const body = {
+    model: MODEL,
+    max_tokens: maxTokens,
+    system,
+    output_config: { effort },
+    messages: [{ role:"user", content: user }]
+  };
+  if(search) body.tools = [{ type:"web_search_20260209", name:"web_search", max_uses: 5 }];
+
+  let messages = body.messages;
+  for(let i = 0; i < 4; i++){
+    const res = await fetch(API, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({ ...body, messages })
+    });
+    if(!res.ok){
+      const t = await res.text();
+      if(res.status === 401) throw new Error("APIキーが正しくありません。設定を確認してください。");
+      if(res.status === 429) throw new Error("APIの利用制限に達しました。少し時間をおいて再実行してください。");
+      throw new Error(`APIエラー (${res.status})：${t.slice(0,200)}`);
+    }
+    const data = await res.json();
+    if(data.stop_reason === "refusal") throw new Error("この内容はAI側で生成が見送られました。テーマを変えてお試しください。");
+    if(data.stop_reason === "pause_turn"){
+      messages = [...messages, { role:"assistant", content: data.content }];
+      continue;
+    }
+    return data.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  }
+  throw new Error("生成が完了しませんでした。もう一度お試しください。");
+}
+
+/* ===================== ネタ出し ===================== */
+async function runIdeas(){
+  $("#btnIdeas").disabled = true;
+  area.innerHTML = `<div class="status"><span class="dot"></span>過去記事を確認して、最新情報を検索しています…</div>`;
+  try{
+    const past = await loadPast();
+    const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+
+    const system =
+`あなたは学習塾の塾長本人として、保護者・生徒に向けたブログのネタを考える編集者です。
+
+${JUKU}
+
+【本日】${today}
+
+【この塾が過去に公開した記事（重複を避けること）】
+${past.titles.length ? past.titles.join("\n") : "（取得できませんでした）"}
+
+${past.samples.length ? `【塾長の文体サンプル】\n${past.samples.join("\n\n")}` : ""}`;
+
+    const kind = articleType === "seo"
+      ? `「教育情報・SEO型」の記事ネタ。埼玉県（川越市・ふじみ野市周辺）の中学生・保護者が検索しそうなテーマ。埼玉県公立高校入試、内申点、北辰テスト、定期テスト、学習方法など。ウェブ検索で最新の入試制度・日程・教育ニュースを必ず確認し、事実に基づくこと。`
+      : `「日常コラム型」の記事ネタ。塾の日常や季節の話題に、教育的な気づきを一つ添える。堅くなりすぎず、保護者が読んで塾の雰囲気が伝わるもの。ウェブ検索で今の季節の話題や教育ニュースを軽く確認してよい。`;
+
+    const user =
+`${kind}
+
+今日書くとしたら、というネタを5つ提案してください。過去記事と内容が重複するものは避けてください。
+
+必ず次のJSONだけを出力してください（前後に説明文を書かない）。
+{"ideas":[{"title":"記事タイトル案","why":"今これを書くとよい理由を1文で","tags":["キーワード","キーワード"]}]}`;
+
+    const raw = await callClaude({ system, user, maxTokens: 8000, effort: "medium" });
+    const ideas = parseJson(raw).ideas || [];
+    if(!ideas.length) throw new Error("ネタを読み取れませんでした。もう一度お試しください。");
+    renderIdeas(ideas, past);
+  }catch(e){
+    area.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }finally{
+    $("#btnIdeas").disabled = false;
+  }
+}
+
+function parseJson(t){
+  const m = t.match(/\{[\s\S]*\}/);
+  if(!m) return {};
+  try{ return JSON.parse(m[0]); }catch(e){ return {}; }
+}
+
+function renderIdeas(ideas, past){
+  const warn = past.error
+    ? `<div class="err" style="margin-bottom:12px">過去記事を読み込めませんでした（重複チェックなしで生成しています）</div>` : "";
+  area.innerHTML = warn + ideas.map((it,i) => `
+    <div class="card">
+      <h3>${esc(it.title)}</h3>
+      <p class="why">${esc(it.why||"")}</p>
+      <div>${(it.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div>
+      <div class="rowbtn">
+        <button data-i="${i}" data-mode="outline">構成だけ</button>
+        <button data-i="${i}" data-mode="draft" class="primary">下書き全文</button>
+      </div>
+    </div>`).join("");
+  area.onclick = e => {
+    const b = e.target.closest("button[data-mode]"); if(!b) return;
+    runWrite(ideas[+b.dataset.i], b.dataset.mode, b);
+  };
+}
+
+/* ===================== 構成・下書き ===================== */
+async function runWrite(idea, mode, btn){
+  const label = btn.textContent;
+  btn.textContent = "生成中…"; btn.disabled = true;
+  try{
+    const past = await loadPast();
+    const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+    const len = articleType === "seo" ? "1500〜2500字" : "600〜1000字";
+
+    const system =
+`あなたは学習塾の塾長（大橋場拓也）本人として、塾の公式ブログを書きます。
+
+${JUKU}
+
+【本日】${today}
+
+${past.samples.length ? `【自分の過去記事＝文体のお手本。この語り口・改行のリズム・親しみやすさを再現すること】\n${past.samples.join("\n\n")}` : ""}
+
+【必ず守ること】
+・保護者と生徒が読む文章。専門用語は噛み砕く。
+・断定できない情報（入試日程・制度など）は必ずウェブ検索で確認し、不確かなものは書かない。
+・生徒の実名は書かない。過度な煽り・不安を煽る表現は使わない。
+・${len}程度。読みやすいよう2〜3文ごとに改行する。
+・見出しは「## 」で始める（WordPressで見出しに変換します）。
+・出力は記事そのものだけ。前置きや「承知しました」などの説明は書かない。`;
+
+    const user = mode === "outline"
+      ? `テーマ：「${idea.title}」（${idea.why||""}）
+
+この記事の設計案を出してください。
+1) タイトル案を3つ
+2) 見出し構成（## 見出し）と、各見出しで書く内容を1〜2行のメモで
+3) 冒頭の書き出し1〜2文の案
+
+本文は書かなくて結構です。`
+      : `テーマ：「${idea.title}」（${idea.why||""}）
+
+この記事の下書きを最後まで書いてください。
+1行目にタイトル、2行目を空けてから本文を書いてください。`;
+
+    const text = await callClaude({
+      system, user,
+      maxTokens: mode === "draft" ? 16000 : 8000,
+      effort: mode === "draft" ? "high" : "medium"
+    });
+
+    const lines = text.split("\n");
+    const title = (mode === "draft")
+      ? lines[0].replace(/^#+\s*/,"").trim() || idea.title
+      : idea.title;
+    const body  = (mode === "draft") ? lines.slice(1).join("\n").trim() : text;
+
+    lastResult = { title, body, mode };
+    saveHist({ title, body, mode, type: articleType, at: Date.now() });
+    showOut(mode === "draft" ? "下書き" : "構成案", title, body, mode === "draft");
+  }catch(e){
+    alert(e.message);
+  }finally{
+    btn.textContent = label; btn.disabled = false;
+  }
+}
+
+/* ===================== 結果表示 ===================== */
+function showOut(kind, title, body, canPost){
+  $("#outTitle").textContent = kind;
+  $("#outBody").textContent  = (kind === "下書き" ? title + "\n\n" : "") + body;
+  $("#btnWp").style.display  = canPost ? "" : "none";
+  $("#wpMsg").textContent    = "";
+  $("#dlgOut").showModal();
+}
+
+async function copyOut(){
+  try{
+    await navigator.clipboard.writeText($("#outBody").textContent);
+    $("#btnCopy").textContent = "✅ コピーしました";
+    setTimeout(()=> $("#btnCopy").textContent = "📋 全文コピー", 1800);
+  }catch(e){ alert("コピーできませんでした。手動で選択してコピーしてください。"); }
+}
+
+/* ===================== WordPress 下書き送信 ===================== */
+function toHtml(md){
+  return md.split(/\n{2,}/).map(blk=>{
+    const t = blk.trim(); if(!t) return "";
+    const h = t.match(/^(#{2,3})\s*(.+)$/);
+    if(h) return `<h${h[1].length}>${esc(h[2])}</h${h[1].length}>`;
+    return `<p>${esc(t).replace(/\n/g,"<br>")}</p>`;
+  }).filter(Boolean).join("\n");
+}
+
+async function sendWp(){
+  if(!lastResult) return;
+  const c = store.get();
+  if(!c.user || !c.pass){ $("#wpMsg").innerHTML = "設定でWordPressのユーザー名とアプリケーションパスワードを入力してください。"; return; }
+  $("#btnWp").disabled = true; $("#wpMsg").textContent = "送信中…";
+  try{
+    const res = await fetch(`${c.wp}/wp-json/wp/v2/posts`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Authorization": "Basic " + btoa(unescape(encodeURIComponent(`${c.user}:${c.pass}`)))
+      },
+      body: JSON.stringify({ title: lastResult.title, content: toHtml(lastResult.body), status: "draft" })
+    });
+    const d = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(d.message || `エラー ${res.status}`);
+    $("#wpMsg").innerHTML = `<span class="ok">✅ 下書きとして保存しました。</span> <a href="${esc(d.link||c.wp)}" target="_blank" rel="noopener">WordPressで開く</a>（公開は管理画面から行ってください）`;
+  }catch(e){
+    $("#wpMsg").innerHTML = `<span style="color:#a12a2a">送信できませんでした：${esc(e.message)}</span><br>「全文コピー」で貼り付けてください。`;
+  }finally{
+    $("#btnWp").disabled = false;
+  }
+}
+
+/* ===================== 履歴 ===================== */
+function saveHist(item){
+  const h = store.get().hist || [];
+  h.unshift(item);
+  store.set({ hist: h.slice(0,50) });
+}
+function openHist(){
+  const h = store.get().hist || [];
+  $("#histBody").innerHTML = h.length
+    ? h.map((x,i)=>`<button data-i="${i}">${esc(x.title)}<span>${new Date(x.at).toLocaleString("ja-JP")}　${x.mode==="draft"?"下書き":"構成案"}</span></button>`).join("")
+    : `<p class="note">まだ履歴はありません。</p>`;
+  $("#histBody").onclick = e => {
+    const b = e.target.closest("button[data-i]"); if(!b) return;
+    const x = h[+b.dataset.i];
+    lastResult = x;
+    $("#dlgHist").close();
+    showOut(x.mode==="draft"?"下書き":"構成案", x.title, x.body, x.mode==="draft");
+  };
+  $("#dlgHist").showModal();
+}
+
+function esc(s){ return String(s??"").replace(/[&<>"]/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m])); }
+</script>
+</body>
+</html>
