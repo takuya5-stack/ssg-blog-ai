@@ -84,6 +84,14 @@ section{margin:20px 0}
 .out p{margin:0 0 15px}
 .out :first-child{margin-top:0}
 @media (max-width:460px){ .dlg-bd .rowbtn{flex-direction:column} }
+.imgnote{font-size:12px;color:var(--sub);margin:4px 0 8px;line-height:1.6}
+.imgs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}
+.imgs figure{margin:0;cursor:pointer;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg)}
+.imgs figure.on{border-color:var(--accent);box-shadow:0 0 0 3px #fdf6f1}
+.imgs img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.imgs figcaption{font-size:12px;text-align:center;padding:7px 4px;color:var(--sub);font-weight:600}
+.imgs figure.on figcaption{color:var(--accent-d)}
+.dl{display:inline-block;font-size:13px;color:var(--accent-d);margin-bottom:10px}
 dialog{
   border:none;border-radius:16px;padding:0;max-width:640px;width:calc(100% - 24px);
   box-shadow:0 20px 60px rgba(0,0,0,.25);color:var(--ink);background:var(--card);
@@ -148,6 +156,10 @@ label.f .hint{display:block;font-weight:400;font-size:11px;color:var(--sub);marg
       <input type="password" id="cfgKey" placeholder="sk-ant-...">
       <span class="hint">console.anthropic.com で発行。ファイルには保存されず、この端末のブラウザにだけ残ります。</span>
     </label>
+    <label class="f">Gemini APIキー（画像生成に使用・任意）
+      <input type="password" id="cfgGKey" placeholder="AIza...">
+      <span class="hint">aistudio.google.com で発行。未入力でも記事の生成は使えます。画像は1枚あたり約10円かかります（無料枠なし）。</span>
+    </label>
     <label class="f">ブログのURL
       <input type="url" id="cfgWp" placeholder="https://www.ssg-juku-shingashi.com">
       <span class="hint">過去記事の読み込み（重複チェック・文体参考）に使います。</span>
@@ -177,8 +189,10 @@ label.f .hint{display:block;font-weight:400;font-size:11px;color:var(--sub);marg
   <div class="dlg-bd">
     <div class="rowbtn" style="margin-bottom:14px">
       <button id="btnCopy">📋 全文コピー</button>
+      <button id="btnImg">🖼 画像を2案つくる</button>
       <button id="btnWp" class="primary">📤 WordPressに下書き送信</button>
     </div>
+    <div id="imgArea"></div>
     <div id="wpMsg" class="note" style="margin-bottom:12px"></div>
     <div class="out" id="outBody"></div>
   </div>
@@ -187,6 +201,9 @@ label.f .hint{display:block;font-weight:400;font-size:11px;color:var(--sub);marg
 <script>
 /* ===================== 設定 ===================== */
 const MODEL = "claude-sonnet-5";         // コスト重視。品質を上げるなら "claude-opus-5"
+// 画像生成モデル。安くするなら "gemini-3.1-flash-lite-image"（約5円）、
+// 最高品質なら "gemini-3-pro-image"（約20円）
+const IMG_MODEL = "gemini-3.1-flash-image";
 const API   = "https://api.anthropic.com/v1/messages";
 const LS    = "ssgBlogAI";
 
@@ -205,6 +222,8 @@ const store = {
 let articleType = "column";
 let pastPosts   = null;   // {titles:[], samples:[]}
 let lastResult  = null;   // {title, body}
+let images      = [];     // 生成した画像2案 [{b64, mime}|null]
+let pickedImg   = null;   // 選択中の案
 
 const $ = s => document.querySelector(s);
 const area = $("#area");
@@ -228,12 +247,14 @@ const area = $("#area");
   $("#btnSave").onclick = saveCfg;
   $("#btnIdeas").onclick = runIdeas;
   $("#btnCopy").onclick = copyOut;
+  $("#btnImg").onclick  = runImages;
   $("#btnWp").onclick   = sendWp;
 })();
 
 function openCfg(){
   const c = store.get();
   $("#cfgKey").value = c.key || "";
+  $("#cfgGKey").value= c.gkey|| "";
   $("#cfgWp").value  = c.wp  || "";
   $("#cfgUser").value= c.user|| "";
   $("#cfgPass").value= c.pass|| "";
@@ -242,6 +263,7 @@ function openCfg(){
 function saveCfg(){
   store.set({
     key : $("#cfgKey").value.trim(),
+    gkey: $("#cfgGKey").value.trim(),
     wp  : $("#cfgWp").value.trim().replace(/\/+$/,""),
     user: $("#cfgUser").value.trim(),
     pass: $("#cfgPass").value.trim()
@@ -449,7 +471,9 @@ function showOut(kind, title, body, canPost){
   $("#outBody").innerHTML =
     (kind === "下書き" ? `<p class="ttl">${inline(title)}</p>` : "") + toHtml(body);
   $("#btnWp").style.display  = canPost ? "" : "none";
+  $("#btnImg").style.display = canPost ? "" : "none";   // 画像は下書きのときだけ
   $("#wpMsg").textContent    = "";
+  images = []; pickedImg = null; renderImages();        // 前回の画像を持ち越さない
   $("#dlgOut").showModal();
 }
 
@@ -475,6 +499,110 @@ async function copyOut(){
     try{ await navigator.clipboard.writeText(plain); done(); }
     catch(_){ alert("コピーできませんでした。文章を選択して手動でコピーしてください。"); }
   }
+}
+
+/* ===================== 画像生成（Gemini） ===================== */
+// 絵柄の方針：イラスト調・人物なし・文字なし・16:9
+const IMG_STYLE =
+`Flat vector illustration for the header image of a Japanese cram school blog.
+Soft hand-drawn texture, warm cream background, terracotta and muted sage-green accents, gentle natural light.
+Calm, tidy, inviting, editorial quality. Wide 16:9 composition with generous negative space.
+Absolutely no people: no human figures, no faces, no hands, no silhouettes.
+Absolutely no text: no letters, no words, no numbers, no logos, no watermarks, no signage.`;
+
+const IMG_VARIANTS = [
+  { label:"A案（机まわり）", extra:"Overhead flat-lay of study desk items: an open notebook, pencils, an eraser, a stack of textbooks, and a small potted plant, neatly arranged." },
+  { label:"B案（情景）",     extra:"A quiet interior scene evoking the season and mood of the theme: a bright window with soft light, sky and seasonal plants outside, and the corner of a wooden desk in the foreground." }
+];
+
+// レスポンス形式が公式ドキュメントに完全記載されていないため、
+// output_image / steps[].content[] / inlineData のいずれの形でも拾えるようにする
+function pickImage(d){
+  const norm = n => ({ b64:n.data, mime:n.mime_type || n.mimeType || "image/jpeg" });
+  const o = d && d.output_image;
+  if(o && typeof o.data === "string") return norm(o);
+  const seen = new Set();
+  const walk = n => {
+    if(!n || typeof n !== "object" || seen.has(n)) return null;
+    seen.add(n);
+    const mime = n.mime_type || n.mimeType || "";
+    if(typeof n.data === "string" && n.data.length > 512 && (n.type === "image" || /^image\//.test(mime))) return norm(n);
+    for(const v of Object.values(n)){
+      if(Array.isArray(v)){ for(const x of v){ const r = walk(x); if(r) return r; } }
+      else { const r = walk(v); if(r) return r; }
+    }
+    return null;
+  };
+  return walk(d);
+}
+
+async function genImage(prompt){
+  const key = store.get().gkey;
+  if(!key){ openCfg(); throw new Error("Gemini APIキーが未設定です。設定から入力してください。"); }
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: { "content-type":"application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      model: IMG_MODEL,
+      input: [{ type:"text", text: prompt }],
+      response_format: { type:"image", mime_type:"image/jpeg", aspect_ratio:"16:9", image_size:"1K" }
+    })
+  });
+  const data = await res.json().catch(()=>null);
+  if(!res.ok){
+    const m = (data && data.error && data.error.message) || `エラー ${res.status}`;
+    if(/API key/i.test(m)) throw new Error("Gemini APIキーが正しくありません。設定を確認してください。");
+    if(res.status === 429) throw new Error("Geminiの利用制限に達しました。少し時間をおいてお試しください。");
+    throw new Error(`画像を生成できませんでした：${m}`);
+  }
+  const img = pickImage(data);
+  if(!img) throw new Error("画像データを取り出せませんでした。応答の形式：" + JSON.stringify(data).slice(0,160));
+  return img;
+}
+
+async function runImages(){
+  if(!lastResult) return;
+  const btn = $("#btnImg"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "画像を生成中…（30秒ほど）";
+  $("#imgArea").innerHTML = `<div class="status"><span class="dot"></span>アイキャッチ画像を2案つくっています…</div>`;
+  try{
+    const theme = `Theme of the article: "${lastResult.title}".`;
+    const results = await Promise.allSettled(
+      IMG_VARIANTS.map(v => genImage(`${IMG_STYLE}\n${theme}\n${v.extra}`))
+    );
+    images = results.map(r => r.status === "fulfilled" ? r.value : null);
+    if(images.every(x => !x)){
+      throw new Error(results[0].reason ? results[0].reason.message : "生成に失敗しました。");
+    }
+    pickedImg = images.findIndex(x => x);
+    renderImages();
+  }catch(e){
+    images = []; pickedImg = null;
+    $("#imgArea").innerHTML = `<div class="err" style="margin-bottom:12px">${esc(e.message)}</div>`;
+  }finally{
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+function renderImages(){
+  const el = $("#imgArea");
+  if(!images.length){ el.innerHTML = ""; return; }
+  const cur = images[pickedImg];
+  el.innerHTML =
+    `<div class="imgnote">使いたい方をタップして選んでください。選んだ画像がWordPress送信時にアイキャッチとして設定されます。</div>
+     <div class="imgs">${images.map((im,i)=> im
+        ? `<figure class="${pickedImg===i?'on':''}" data-i="${i}">
+             <img src="data:${im.mime};base64,${im.b64}" alt="">
+             <figcaption>${IMG_VARIANTS[i].label}${pickedImg===i?' ✓':''}</figcaption>
+           </figure>`
+        : `<figure style="cursor:default"><div style="aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--sub)">生成できませんでした</div><figcaption>${IMG_VARIANTS[i].label}</figcaption></figure>`
+      ).join("")}</div>` +
+    (cur ? `<a class="dl" download="${esc((lastResult && lastResult.title) || "eyecatch").slice(0,40)}.jpg" href="data:${cur.mime};base64,${cur.b64}">⬇ 選んだ画像を保存</a>` : "");
+  el.onclick = e => {
+    const f = e.target.closest("figure[data-i]"); if(!f) return;
+    pickedImg = +f.dataset.i;
+    renderImages();
+  };
 }
 
 /* ===================== WordPress 下書き送信 ===================== */
@@ -506,21 +634,52 @@ async function sendWp(){
   if(!lastResult) return;
   const c = store.get();
   if(!c.user || !c.pass){ $("#wpMsg").innerHTML = "設定でWordPressのユーザー名とアプリケーションパスワードを入力してください。"; return; }
-  $("#btnWp").disabled = true; $("#wpMsg").textContent = "送信中…";
+  const auth = "Basic " + btoa(unescape(encodeURIComponent(`${c.user}:${c.pass}`)));
+  $("#btnWp").disabled = true;
   try{
+    // 1) 画像を選んでいればメディアライブラリへ先にアップロード
+    let featured = 0;
+    const im = (pickedImg !== null && images[pickedImg]) ? images[pickedImg] : null;
+    if(im){
+      $("#wpMsg").textContent = "画像をアップロード中…";
+      const bin = Uint8Array.from(atob(im.b64), ch => ch.charCodeAt(0));
+      const ext = /png/.test(im.mime) ? "png" : "jpg";
+      const mr = await fetch(`${c.wp}/wp-json/wp/v2/media`, {
+        method: "POST",
+        headers: {
+          "Authorization": auth,
+          "content-type": im.mime,
+          "content-disposition": `attachment; filename="ssg-${Date.now()}.${ext}"`
+        },
+        body: bin
+      });
+      const md = await mr.json().catch(()=>({}));
+      if(!mr.ok) throw new Error(`画像のアップロードに失敗しました：${md.message || mr.status}`);
+      featured = md.id;
+      // 代替テキストを記事タイトルにしておく（失敗しても本処理は続ける）
+      fetch(`${c.wp}/wp-json/wp/v2/media/${featured}`, {
+        method: "POST",
+        headers: { "Authorization": auth, "content-type": "application/json" },
+        body: JSON.stringify({ alt_text: lastResult.title, title: lastResult.title })
+      }).catch(()=>{});
+    }
+
+    // 2) 記事を下書きとして作成
+    $("#wpMsg").textContent = "下書きを送信中…";
+    const body = { title: lastResult.title, content: toHtml(lastResult.body), status: "draft" };
+    if(featured) body.featured_media = featured;
     const res = await fetch(`${c.wp}/wp-json/wp/v2/posts`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "Authorization": "Basic " + btoa(unescape(encodeURIComponent(`${c.user}:${c.pass}`)))
-      },
-      body: JSON.stringify({ title: lastResult.title, content: toHtml(lastResult.body), status: "draft" })
+      headers: { "content-type": "application/json", "Authorization": auth },
+      body: JSON.stringify(body)
     });
     const d = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(d.message || `エラー ${res.status}`);
-    $("#wpMsg").innerHTML = `<span class="ok">✅ 下書きとして保存しました。</span> <a href="${esc(d.link||c.wp)}" target="_blank" rel="noopener">WordPressで開く</a>（公開は管理画面から行ってください）`;
+    $("#wpMsg").innerHTML =
+      `<span class="ok">✅ 下書きとして保存しました${featured ? "（アイキャッチ画像も設定済み）" : ""}。</span> ` +
+      `<a href="${esc(d.link||c.wp)}" target="_blank" rel="noopener">WordPressで開く</a>（公開は管理画面から行ってください）`;
   }catch(e){
-    $("#wpMsg").innerHTML = `<span style="color:#a12a2a">送信できませんでした：${esc(e.message)}</span><br>「全文コピー」で貼り付けてください。`;
+    $("#wpMsg").innerHTML = `<span style="color:#a12a2a">送信できませんでした：${esc(e.message)}</span><br>「全文コピー」で本文を貼り付け、画像は「選んだ画像を保存」からアップロードしてください。`;
   }finally{
     $("#btnWp").disabled = false;
   }
