@@ -77,7 +77,13 @@ section{margin:20px 0}
 }
 @keyframes p{50%{opacity:.25}}
 .err{background:#fdecec;border:1px solid #f3c9c9;color:#a12a2a;padding:12px 14px;border-radius:12px;font-size:14px}
-.out{white-space:pre-wrap;font-size:15px;line-height:1.9;word-break:break-word}
+.out{font-size:15px;line-height:1.9;word-break:break-word}
+.out .ttl{font-size:19px;font-weight:700;line-height:1.5;margin:0 0 20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.out h2{font-size:17px;line-height:1.5;margin:28px 0 10px;padding-left:11px;border-left:4px solid var(--accent)}
+.out h3{font-size:15px;line-height:1.5;margin:22px 0 8px;color:var(--accent-d)}
+.out p{margin:0 0 15px}
+.out :first-child{margin-top:0}
+@media (max-width:460px){ .dlg-bd .rowbtn{flex-direction:column} }
 dialog{
   border:none;border-radius:16px;padding:0;max-width:640px;width:calc(100% - 24px);
   box-shadow:0 20px 60px rgba(0,0,0,.25);color:var(--ink);background:var(--card);
@@ -440,28 +446,60 @@ ${past.samples.length ? `【自分の過去記事＝文体のお手本。この�
 /* ===================== 結果表示 ===================== */
 function showOut(kind, title, body, canPost){
   $("#outTitle").textContent = kind;
-  $("#outBody").textContent  = (kind === "下書き" ? title + "\n\n" : "") + body;
+  $("#outBody").innerHTML =
+    (kind === "下書き" ? `<p class="ttl">${inline(title)}</p>` : "") + toHtml(body);
   $("#btnWp").style.display  = canPost ? "" : "none";
   $("#wpMsg").textContent    = "";
   $("#dlgOut").showModal();
 }
 
 async function copyOut(){
-  try{
-    await navigator.clipboard.writeText($("#outBody").textContent);
+  const el = $("#outBody");
+  const plain = el.innerText;   // 「##」なしの読める文章
+  const html  = el.innerHTML;   // 貼り付け先で見出しを保つ
+  const done = () => {
     $("#btnCopy").textContent = "✅ コピーしました";
     setTimeout(()=> $("#btnCopy").textContent = "📋 全文コピー", 1800);
-  }catch(e){ alert("コピーできませんでした。手動で選択してコピーしてください。"); }
+  };
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([ new ClipboardItem({
+        "text/html" : new Blob([html],  { type:"text/html"  }),
+        "text/plain": new Blob([plain], { type:"text/plain" })
+      })]);
+      return done();
+    }
+    await navigator.clipboard.writeText(plain);
+    done();
+  }catch(e){
+    try{ await navigator.clipboard.writeText(plain); done(); }
+    catch(_){ alert("コピーできませんでした。文章を選択して手動でコピーしてください。"); }
+  }
 }
 
 /* ===================== WordPress 下書き送信 ===================== */
+function inline(s){
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+// 「## 見出し」を h2/h3 に、それ以外を段落に変換する。
+// 見出しの直後に空行がなくても正しく見出しとして扱う。
 function toHtml(md){
-  return md.split(/\n{2,}/).map(blk=>{
-    const t = blk.trim(); if(!t) return "";
-    const h = t.match(/^(#{2,3})\s*(.+)$/);
-    if(h) return `<h${h[1].length}>${esc(h[2])}</h${h[1].length}>`;
-    return `<p>${esc(t).replace(/\n/g,"<br>")}</p>`;
-  }).filter(Boolean).join("\n");
+  const out = [], buf = [];
+  const flush = () => { if(buf.length){ out.push(`<p>${buf.splice(0).join("<br>")}</p>`); } };
+  String(md||"").split("\n").forEach(line => {
+    const t = line.trim();
+    if(!t){ flush(); return; }
+    const h = t.match(/^(#{1,4})\s*(.+)$/);
+    if(h){
+      flush();
+      const lv = h[1].length <= 2 ? 2 : 3;
+      out.push(`<h${lv}>${inline(h[2])}</h${lv}>`);
+      return;
+    }
+    buf.push(inline(t));
+  });
+  flush();
+  return out.join("\n");
 }
 
 async function sendWp(){
