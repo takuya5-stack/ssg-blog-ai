@@ -471,7 +471,7 @@ function showOut(kind, title, body, canPost){
   $("#outBody").innerHTML =
     (kind === "下書き" ? `<p class="ttl">${inline(title)}</p>` : "") + toHtml(body);
   $("#btnWp").style.display  = canPost ? "" : "none";
-  $("#btnImg").style.display = canPost ? "" : "none";   // 画像は下書きのときだけ
+  $("#btnImg").style.display = "";                       // 画像は構成案でも作れる
   $("#wpMsg").textContent    = "";
   images = []; pickedImg = null; renderImages();        // 前回の画像を持ち越さない
   $("#dlgOut").showModal();
@@ -505,8 +505,11 @@ async function copyOut(){
 // 絵柄の方針：イラスト調・人物なし・文字なし・16:9
 const IMG_STYLE =
 `Flat vector illustration for the header image of a Japanese cram school blog.
-Soft hand-drawn texture, warm cream background, terracotta and muted sage-green accents, gentle natural light.
-Calm, tidy, inviting, editorial quality. Wide 16:9 composition with generous negative space.
+Soft hand-drawn texture, clean and neutral colour palette: off-white and light cool-grey background,
+pale natural wood, muted blue-grey and soft desaturated green accents. Cool, clear natural daylight.
+IMPORTANT — avoid warm colour casts entirely: no orange, no terracotta, no rust, no amber,
+no mustard, no peach, no beige-brown, no cream, no sepia, no golden-hour lighting.
+Calm, tidy, fresh, editorial quality. Wide 16:9 composition with generous negative space.
 Absolutely no people: no human figures, no faces, no hands, no silhouettes.
 Absolutely no text: no letters, no words, no numbers, no logos, no watermarks, no signage.`;
 
@@ -588,8 +591,11 @@ function renderImages(){
   const el = $("#imgArea");
   if(!images.length){ el.innerHTML = ""; return; }
   const cur = images[pickedImg];
+  const canPost = $("#btnWp").style.display !== "none";
   el.innerHTML =
-    `<div class="imgnote">使いたい方をタップして選んでください。選んだ画像がWordPress送信時にアイキャッチとして設定されます。</div>
+    `<div class="imgnote">使いたい方をタップして選んでください。${canPost
+        ? "選んだ画像がWordPress送信時にアイキャッチとして設定されます。"
+        : "下の「選んだ画像を保存」から保存して、記事を書くときにお使いください。"}</div>
      <div class="imgs">${images.map((im,i)=> im
         ? `<figure class="${pickedImg===i?'on':''}" data-i="${i}">
              <img src="data:${im.mime};base64,${im.b64}" alt="">
