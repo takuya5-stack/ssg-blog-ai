@@ -51,6 +51,12 @@ section{margin:20px 0}
 }
 .go:active{background:var(--accent-d)}
 .go:disabled{opacity:.5;cursor:default}
+textarea#memo{
+  width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;
+  font-size:15px;font-family:inherit;line-height:1.7;background:var(--card);color:var(--ink);
+  resize:vertical;box-shadow:var(--shadow);
+}
+textarea#memo:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .card{
   background:var(--card);border:1px solid var(--line);border-radius:14px;
   padding:16px;margin-bottom:12px;box-shadow:var(--shadow);
@@ -141,6 +147,18 @@ label.f .hint{display:block;font-weight:400;font-size:11px;color:var(--sub);marg
     <p class="note" style="margin:10px 2px 0">
       最新の教育情報をAIが検索し、過去記事と重複しないネタを出します。<br>
       出てきた案ごとに「構成だけ」か「下書き全文」を選べます。
+    </p>
+  </section>
+
+  <section>
+    <div class="label">書きたいことが決まっているとき</div>
+    <textarea id="memo" rows="3" placeholder="例）今日、中3の生徒が北辰の結果で落ち込んでいた。結果との向き合い方について書きたい"></textarea>
+    <div class="rowbtn" style="margin-top:9px">
+      <button id="btnMemoIdeas">切り口を3つ出す</button>
+      <button id="btnMemoDraft" class="primary">そのまま下書きを書く</button>
+    </div>
+    <p class="note" style="margin:10px 2px 0">
+      メモの内容を記事の核にします。その日の出来事や生徒の様子など、覚えている材料を書くほど具体的な記事になります。
     </p>
   </section>
 
@@ -246,6 +264,8 @@ const area = $("#area");
   $("#btnHist").onclick = openHist;
   $("#btnSave").onclick = saveCfg;
   $("#btnIdeas").onclick = runIdeas;
+  $("#btnMemoIdeas").onclick = () => runMemo("ideas");
+  $("#btnMemoDraft").onclick = () => runMemo("draft");
   $("#btnCopy").onclick = copyOut;
   $("#btnImg").onclick  = runImages;
   $("#btnWp").onclick   = sendWp;
@@ -336,15 +356,8 @@ async function callClaude({ system, user, maxTokens = 8000, effort = "medium", s
 }
 
 /* ===================== ネタ出し ===================== */
-async function runIdeas(){
-  $("#btnIdeas").disabled = true;
-  area.innerHTML = `<div class="status"><span class="dot"></span>過去記事を確認して、最新情報を検索しています…</div>`;
-  try{
-    const past = await loadPast();
-    const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
-
-    const system =
-`あなたは学習塾の塾長本人として、保護者・生徒に向けたブログのネタを考える編集者です。
+function ideaSystem(past, today){
+  return `あなたは学習塾の塾長本人として、保護者・生徒に向けたブログのネタを考える編集者です。
 
 ${JUKU}
 
@@ -354,6 +367,16 @@ ${JUKU}
 ${past.titles.length ? past.titles.join("\n") : "（取得できませんでした）"}
 
 ${past.samples.length ? `【塾長の文体サンプル】\n${past.samples.join("\n\n")}` : ""}`;
+}
+
+async function runIdeas(){
+  $("#btnIdeas").disabled = true;
+  area.innerHTML = `<div class="status"><span class="dot"></span>過去記事を確認して、最新情報を検索しています…</div>`;
+  try{
+    const past = await loadPast();
+    const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+
+    const system = ideaSystem(past, today);
 
     const kind = articleType === "seo"
       ? `「教育情報・SEO型」の記事ネタ。埼玉県（川越市・ふじみ野市周辺）の中学生・保護者が検索しそうなテーマ。埼玉県公立高校入試、内申点、北辰テスト、定期テスト、学習方法など。ウェブ検索で最新の入試制度・日程・教育ニュースを必ず確認し、事実に基づくこと。`
@@ -403,6 +426,48 @@ function renderIdeas(ideas, past){
   };
 }
 
+/* ===================== メモから起こす ===================== */
+async function runMemo(kind){
+  const memo = $("#memo").value.trim();
+  if(!memo){ alert("書きたいことをメモ欄に入力してください。"); $("#memo").focus(); return; }
+
+  // 迷いがないときはカードを介さず、そのまま下書きへ
+  if(kind === "draft"){
+    return runWrite({ title: memo.split("\n")[0].slice(0,60), why:"", memo }, "draft", $("#btnMemoDraft"));
+  }
+
+  const btn = $("#btnMemoIdeas"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "考え中…";
+  area.innerHTML = `<div class="status"><span class="dot"></span>メモをもとに切り口を考えています…</div>`;
+  try{
+    const past = await loadPast();
+    const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+    const tone = articleType === "seo"
+      ? "「教育情報・SEO型」として、埼玉県の中学生・保護者が検索しそうな形に寄せる。事実に関わる部分はウェブ検索で確認する。"
+      : "「日常コラム型」として、塾の日常の手触りを残したまま、教育的な気づきが一つ伝わる形にする。";
+
+    const user =
+`【塾長が書いたメモ】
+${memo}
+
+このメモを記事の核として、書き方の切り口を3つ提案してください。${tone}
+メモに書かれている具体的な出来事・材料は必ず活かし、メモから離れた別のテーマにすり替えないでください。
+3つは「同じ素材をどの角度から書くか」の違いにしてください。
+
+必ず次のJSONだけを出力してください（前後に説明文を書かない）。
+{"ideas":[{"title":"記事タイトル案","why":"この切り口で書くとどう伝わるかを1文で","tags":["キーワード","キーワード"]}]}`;
+
+    const raw = await callClaude({ system: ideaSystem(past, today), user, maxTokens: 8000, effort: "medium" });
+    const ideas = (parseJson(raw).ideas || []).map(x => ({ ...x, memo }));
+    if(!ideas.length) throw new Error("切り口を読み取れませんでした。もう一度お試しください。");
+    renderIdeas(ideas, past);
+  }catch(e){
+    area.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }finally{
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
 /* ===================== 構成・下書き ===================== */
 async function runWrite(idea, mode, btn){
   const label = btn.textContent;
@@ -429,8 +494,15 @@ ${past.samples.length ? `【自分の過去記事＝文体のお手本。この�
 ・見出しは「## 」で始める（WordPressで見出しに変換します）。
 ・出力は記事そのものだけ。前置きや「承知しました」などの説明は書かない。`;
 
+    const memoBlock = idea.memo
+      ? `【塾長が書き残したメモ。これを記事の核にすること。ここにある出来事や気づきは必ず活かし、別のテーマにすり替えない】
+${idea.memo}
+
+`
+      : "";
+
     const user = mode === "outline"
-      ? `テーマ：「${idea.title}」（${idea.why||""}）
+      ? `${memoBlock}テーマ：「${idea.title}」（${idea.why||""}）
 
 この記事の設計案を出してください。
 1) タイトル案を3つ
@@ -438,7 +510,7 @@ ${past.samples.length ? `【自分の過去記事＝文体のお手本。この�
 3) 冒頭の書き出し1〜2文の案
 
 本文は書かなくて結構です。`
-      : `テーマ：「${idea.title}」（${idea.why||""}）
+      : `${memoBlock}テーマ：「${idea.title}」（${idea.why||""}）
 
 この記事の下書きを最後まで書いてください。
 1行目にタイトル、2行目を空けてから本文を書いてください。`;
